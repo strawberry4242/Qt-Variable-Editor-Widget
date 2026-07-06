@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<UI version="4.0" >
+ <class>Vid11Class</class>
+ <widget class="QWidget" name="Vid11Class" >
+  <property name="objectName" >
+   <string notr="true">Vid11Class</string>
+  </property>
+  <property name="geometry" >
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>600</width>
+    <height>400</height>
+   </rect>
+  </property>
+  <property name="windowTitle" >
+   <string>Vid11</string>
+  </property>$centralwidget$
+ </widget>
+ <layoutDefault spacing="6" margin="11" />
+ <pixmapfunction></pixmapfunction>
+ <resources>
+   <include location="Vid11.qrc"/>
+ </resources>
+ <connections/>
+</UI>
