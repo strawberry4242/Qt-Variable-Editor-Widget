@@ -210,35 +210,17 @@ bool ValidatingDelegate::eventFilter(QObject* editor, QEvent* event) {
             }
         }
     }
-
     //для остальных клавиш вызываем стандартное поведение Qt
     return QStyledItemDelegate::eventFilter(editor, event);
 }
 
-//  проверяется валидность значения до того, как оно
-// попадёт в модель. Если проверка не пройдена  в модель ничего не пишем.
 void ValidatingDelegate::setModelData(QWidget* editor, QAbstractItemModel* model, const QModelIndex& index) const {
-    if (index.column() != VariableTableModel::ColKey)
-    {
-        QStyledItemDelegate::setModelData(editor, model, index);
-        return;
-    }
-
     auto* lineEdit = qobject_cast<QLineEdit*>(editor);
     if (!lineEdit) {
         QStyledItemDelegate::setModelData(editor, model, index);
         return;
     }
-
     const QString text = lineEdit->text().trimmed();
-    const int col = index.column();
-    ValidationResult result;
-    result = m_manager->validateKey(text, index.row());
-
-    if (!result.isValid) {
-        return;
-    }
-
     model->setData(index, text, Qt::EditRole);
 }
 
@@ -247,6 +229,8 @@ void ValidatingDelegate::paint(QPainter* painter, const QStyleOptionViewItem& op
     if (!m_searchText.isEmpty() && text.contains(m_searchText, Qt::CaseInsensitive)) {
         QTextDocument doc;
         QString highlighted = text;
+        QColor searchHighlightColor = QColor(Qt::yellow);
+        QColor searchHighlightTextColor = QColor(Qt::black);
         const QString spanStyle = QString("background-color:%1; color:%2;").arg(searchHighlightColor.name(), searchHighlightTextColor.name());
         highlighted.replace(m_searchText, "<span style='" + spanStyle + "'>" + m_searchText + "</span>", Qt::CaseInsensitive);
         doc.setHtml(highlighted);
