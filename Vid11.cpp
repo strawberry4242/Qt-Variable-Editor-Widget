@@ -76,7 +76,7 @@ Vid11::~Vid11() {
 }
 
 void Vid11::setupUI() {
-    this->setWindowTitle("Редактор внутренних переменных");
+    this->setWindowTitle("Редактор пользовательских переменных");
     // Запрашиваем геометрию у бэкенда по уникальному ключу "Vid11"
     QByteArray geometry = m_variantManager->loadWidgetGeometry(QStringLiteral("Vid11"));
 
