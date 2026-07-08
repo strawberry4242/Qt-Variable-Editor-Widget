@@ -8,7 +8,6 @@ class QTableView;
 class QUndoStack;
 class IGlobalVariant;
 class VariableTableModel;
-class VariableFilterProxyModel;
 class ValidatingDelegate;
 
 class Vid11 : public QWidget
@@ -27,7 +26,6 @@ private slots:
 
 private:
     void setupUI();
-    void highlightSourceRow(int sourceRow); // выделить+проскроллить к строке после её изменения/добавления
 
     QTableView* tableView;
     QLineEdit* lineEdit_search;
@@ -39,6 +37,9 @@ private:
     QUndoStack* m_undoStack;
     IGlobalVariant* m_variantManager;
     VariableTableModel* m_model;
-    VariableFilterProxyModel* m_proxyModel;
+    class QSortFilterProxyModel* m_proxyModel;
     ValidatingDelegate* m_delegate;
+protected:
+    // для перехвата закрытия окна:
+    void closeEvent(QCloseEvent* event) override;
 };

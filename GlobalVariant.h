@@ -4,7 +4,8 @@
 #include <QList>
 #include <QRegularExpression>
 #include <map>
-#pragma execution_character_set("utf-8")
+#include <QSettings>
+#include <QByteArray>
 
 struct TableRowData {
     QString key;
@@ -27,7 +28,7 @@ public:
     virtual ~IGlobalVariant() = default;
 
     virtual void setValue(const QString& key, const QString& value, const QString& comment = QString()) = 0;
-    virtual QString value(const QString& key) const = 0;
+    virtual QString value(const QString& key, const QString& defaultValue = QString()) const = 0;
 
     // Работа с комментарием отдельно от значения 
     virtual void setComment(const QString& key, const QString& comment) = 0;
@@ -35,6 +36,17 @@ public:
 
     virtual QList<TableRowData> getValues() const = 0;
     virtual void setValues(const QList<TableRowData>& data) = 0;
+
+    //Дефолтная реализация сохранения настроек окна
+    virtual void saveWidgetGeometry(const QString& key, const QByteArray& geometry) {
+        QSettings settings;
+        settings.setValue(QStringLiteral("Geometry/") + key, geometry);
+    }
+
+    virtual QByteArray loadWidgetGeometry(const QString& key) const {
+        QSettings settings;
+        return settings.value(QStringLiteral("Geometry/") + key).toByteArray();
+    }
 
     // Дефолтная реализация проверки ключа 
     virtual ValidationResult validateKey(const QString& key, int index = -1) {
@@ -75,7 +87,7 @@ public:
     GlobalVariant();
 
     void setValue(const QString& key, const QString& value, const QString& comment = QString()) override;
-    QString value(const QString& key) const override;
+    QString value(const QString& key, const QString& defaultValue = QString()) const override;
 
     void setComment(const QString& key, const QString& comment) override;
     QString comment(const QString& key) const override;
@@ -89,6 +101,6 @@ private:
     void saveToSettings() const;
     void loadFromSettings();
 
-    // Хранилище переменных: ключ -> данные строки (п.10 вместо QList)
+    // Хранилище переменных: ключ -> данные строки 
     std::map<QString, TableRowData> m_data;
 };

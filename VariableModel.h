@@ -1,15 +1,15 @@
 #pragma once
 #include <QAbstractTableModel>
-#include <QSortFilterProxyModel>
 #include <QStyledItemDelegate>
 #include <QUndoCommand>
 #include <QList>
+#include <QColor>
 #include "GlobalVariant.h"
 
 class QUndoStack;
 
 
-// МОДЕЛЬ ТАБЛИЦЫ (п.2) наследуется от QAbstractTableModel
+// МОДЕЛЬ ТАБЛИЦЫ наследуется от QAbstractTableModel
 // Все изменения синхронизируются с IGlobalVariant.
 
 class VariableTableModel : public QAbstractTableModel
@@ -47,24 +47,7 @@ private:
 };
 
 
-// ПРОКСИ-МОДЕЛЬ: фильтрация + сортировка (п.11)
-
-class VariableFilterProxyModel : public QSortFilterProxyModel
-{
-    Q_OBJECT
-public:
-    explicit VariableFilterProxyModel(QObject* parent = nullptr);
-    void setSearchText(const QString& text);
-
-protected:
-    bool filterAcceptsRow(int sourceRow, const QModelIndex& sourceParent) const override;
-
-private:
-    QString m_searchText;
-};
-
-
-// ДЕЛЕГАТ (п.3)  подсветка поиска + валидация
+// ДЕЛЕГАТ  подсветка поиска + валидация
 // значения перед тем, как оно попадёт в модель 
 class ValidatingDelegate : public QStyledItemDelegate
 {
@@ -75,11 +58,20 @@ public:
     QWidget* createEditor(QWidget* parent, const QStyleOptionViewItem& option, const QModelIndex& index) const override;
     void setModelData(QWidget* editor, QAbstractItemModel* model, const QModelIndex& index) const override;
     void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override;
+    bool eventFilter(QObject* editor, QEvent* event) override;
 
-    QString searchText;
+    // Публичный сеттер вместо прямого доступа к полю снаружи
+    void setSearchText(const QString& text) { m_searchText = text; }
+    QString searchText() const { return m_searchText; }
+
+    // Цвета подсветки найденного текста вынесены сюда, чтобы их можно
+    // было менять снаружи (например, из настроек), не трогая код paint()
+    QColor searchHighlightColor = QColor(Qt::yellow);
+    QColor searchHighlightTextColor = QColor(Qt::black);
 
 private:
     IGlobalVariant* m_manager;
+    QString m_searchText;
 };
 
 

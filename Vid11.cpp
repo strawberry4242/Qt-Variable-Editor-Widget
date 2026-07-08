@@ -1,7 +1,6 @@
 ﻿#include "Vid11.h"
 #include "GlobalVariant.h"
 #include "VariableModel.h"
-
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -20,9 +19,8 @@
 #include <QDialog>
 #include <QFormLayout>
 #include <QDialogButtonBox>
-#include <QTimer>
-#include <QItemSelectionModel>
-#include <QDebug>
+#include <QSortFilterProxyModel>
+#include <QCloseEvent>
 
 
 Vid11::Vid11(QWidget* parent)
@@ -39,8 +37,10 @@ Vid11::Vid11(QWidget* parent)
     m_model->setUndoStack(m_undoStack);
 
     // Модель оборачиваем в прокси на ней  фильтрация и сортировка 
-    m_proxyModel = new VariableFilterProxyModel(this);
+    m_proxyModel = new QSortFilterProxyModel(this);
+    m_proxyModel->setFilterKeyColumn(-1);
     m_proxyModel->setSourceModel(m_model);
+    m_proxyModel->setFilterCaseSensitivity(Qt::CaseInsensitive);
 
     m_delegate = new ValidatingDelegate(m_variantManager, this);
 
@@ -63,14 +63,11 @@ Vid11::Vid11(QWidget* parent)
     QShortcut* redoKey = new QShortcut(QKeySequence("Ctrl+Shift+Z"), this);
     connect(redoKey, &QShortcut::activated, this, &Vid11::RedoClicked);
 
-    // Автоматически выделяем и прокручиваем к строке, которую добавили или отредактировали 
-    connect(m_model, &QAbstractItemModel::rowsInserted, this, [this](const QModelIndex&, int first, int) {
-        QTimer::singleShot(0, this, [this, first]() { highlightSourceRow(first); });
-        });
-    connect(m_model, &QAbstractItemModel::dataChanged, this,
-        [this](const QModelIndex& topLeft, const QModelIndex&, const QVector<int>&) {
-            const int row = topLeft.row();
-            QTimer::singleShot(0, this, [this, row]() { highlightSourceRow(row); });
+    // Автоматически выделяем и прокручиваем к строке, которую добавили
+    // работаем сразу с прокси-моделью, без обратного преобразования индексов
+    connect(m_proxyModel, &QSortFilterProxyModel::rowsInserted, this, [this](const QModelIndex&, int first, int) {
+        tableView->selectRow(first);
+        tableView->scrollTo(m_proxyModel->index(first, 0));
         });
 }
 
@@ -80,8 +77,16 @@ Vid11::~Vid11() {
 
 void Vid11::setupUI() {
     this->setWindowTitle("Редактор внутренних переменных");
-    this->resize(750, 500);
+    // Запрашиваем геометрию у бэкенда по уникальному ключу "Vid11"
+    QByteArray geometry = m_variantManager->loadWidgetGeometry(QStringLiteral("Vid11"));
 
+    if (!geometry.isEmpty()) {
+        this->restoreGeometry(geometry);
+    }
+    else {
+        // Дефолтный размер, если настроек еще нет
+        this->resize(750, 500);
+    }
     QVBoxLayout* mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(9, 9, 9, 9);
     mainLayout->setSpacing(6);
@@ -136,7 +141,7 @@ void Vid11::setupUI() {
     buttonLayout->addWidget(Buttonredo);
     mainLayout->addLayout(buttonLayout);
 
-    // Таблица теперь QTableView + модель 
+    // Таблица QTableView + модель 
     tableView = new QTableView(this);
     tableView->setModel(m_proxyModel);
     tableView->setItemDelegate(m_delegate);
@@ -144,6 +149,8 @@ void Vid11::setupUI() {
     tableView->setSortingEnabled(true); // сортировка через прокси-модель
     m_proxyModel->sort(VariableTableModel::ColKey, Qt::AscendingOrder); // сортировка по ключу сразу, чтобы новые строки автоматически вставали на место
     tableView->setSelectionBehavior(QAbstractItemView::SelectRows);
+    tableView->setVerticalScrollMode(QAbstractItemView::ScrollPerItem);
+    tableView->verticalHeader()->setDefaultSectionSize(tableView->verticalHeader()->minimumSectionSize());
     mainLayout->addWidget(tableView);
 
     connect(Button_add, &QPushButton::clicked, this, &Vid11::AddClicked);
@@ -153,21 +160,6 @@ void Vid11::setupUI() {
     connect(lineEdit_search, &QLineEdit::textChanged, this, &Vid11::OnSearchChanged);
 }
 
-// Находит строку по индексу исхоной модели в уже отсортированной/отфильтрованной
-// прокси-модели, выделяет её и прокручивает к ней таблицу
-void Vid11::highlightSourceRow(int sourceRow) {
-    if (sourceRow < 0 || sourceRow >= m_model->rowCount()) return;
-
-    QModelIndex sourceIndex = m_model->index(sourceRow, VariableTableModel::ColKey);
-    QModelIndex proxyIndex = m_proxyModel->mapFromSource(sourceIndex);
-
-    // Строка могла быть скрыта активным фильтром поиска  тогда просто ничего не делаем
-    if (!proxyIndex.isValid()) return;
-
-    tableView->setCurrentIndex(proxyIndex);
-    tableView->selectionModel()->select(proxyIndex, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
-    tableView->scrollTo(proxyIndex, QAbstractItemView::PositionAtCenter);
-}
 // При нажатии 'Добавить'
 void Vid11::AddClicked() {
     QDialog dialog(this);
@@ -190,7 +182,7 @@ void Vid11::AddClicked() {
     valueEdit->setPlaceholderText("Необязательно");
     formLayout->addRow("Значение:", valueEdit);
 
-    // Возможность ввести комментарий (п.8)
+    // Возможность ввести комментарий 
     QLineEdit* commentEdit = new QLineEdit(&dialog);
     commentEdit->setPlaceholderText("Необязательно");
     formLayout->addRow("Комментарий:", commentEdit);
@@ -207,7 +199,7 @@ void Vid11::AddClicked() {
     mainLayout->addWidget(buttonBox);
     QPushButton* okButton = buttonBox->button(QDialogButtonBox::Ok);
 
-    // Валидация в реальном времени и блокировка OK, пока есть ошибка (п.9)
+    // Валидация в реальном времени и блокировка OK, пока есть ошибка 
     auto validateLive = [=]() {
         ValidationResult keyResult = m_variantManager->validateKey(keyEdit->text().trimmed());
         keyEdit->setStyleSheet(keyResult.isValid ? "" : "border: 1px solid red; background-color: #FFF0F0;");
@@ -253,9 +245,9 @@ void Vid11::DeleteClicked() {
 }
 
 void Vid11::OnSearchChanged(const QString& text) {
-    m_delegate->searchText = text;
-    // Фильтрация делается прокси-моделью через собственное поле поиска 
-    m_proxyModel->setSearchText(text);
+    m_delegate->setSearchText(text);
+    // Фильтрация выполняется стандартной QSortFilterProxyModel
+    m_proxyModel->setFilterFixedString(text);
     tableView->viewport()->update();
 }
 
@@ -265,4 +257,10 @@ void Vid11::UndoClicked() {
 
 void Vid11::RedoClicked() {
     m_undoStack->redo();
+}
+void Vid11::closeEvent(QCloseEvent* event) {
+    // Получаем геометрию от Qt и сразу отдаем её в бэкенд на сохранение
+    m_variantManager->saveWidgetGeometry(QStringLiteral("Vid11"), saveGeometry());
+    // вызываем базовый класс чтобы окно закрылось
+    QWidget::closeEvent(event);
 }

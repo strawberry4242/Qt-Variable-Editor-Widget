@@ -43,7 +43,7 @@
     <ClCompile Include="GlobalVariant.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\Users\alalg\OneDrive\Рабочий стол\VariableModel.cpp">
+    <ClCompile Include="VariableModel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -53,7 +53,7 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <QtMoc Include="..\Users\alalg\OneDrive\Рабочий стол\VariableModel.h">
+    <QtMoc Include="VariableModel.h">
       <Filter>Header Files</Filter>
     </QtMoc>
   </ItemGroup>

@@ -29,9 +29,9 @@ void GlobalVariant::setValue(const QString& key, const QString& value, const QSt
     saveToSettings();
 }
 
-QString GlobalVariant::value(const QString& key) const {
+QString GlobalVariant::value(const QString& key, const QString& defaultValue) const {
     auto it = m_data.find(key);
-    return it != m_data.end() ? it->second.value : QString();
+    return it != m_data.end() ? it->second.value : defaultValue;
 }
 
 void GlobalVariant::setComment(const QString& key, const QString& comment) {
@@ -64,7 +64,7 @@ void GlobalVariant::setValues(const QList<TableRowData>& data) {
     saveToSettings();
 }
 
-// Храним весь набор переменных одной json-строкой в QSettings (п.5)
+// Храним весь набор переменных одной json-строкой в QSettings
 void GlobalVariant::saveToSettings() const {
     QJsonArray arr;
     for (const auto& pair : m_data) {

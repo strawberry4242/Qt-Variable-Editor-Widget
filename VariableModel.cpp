@@ -6,6 +6,7 @@
 #include <QPainter>
 #include <QToolTip>
 #include <QStyle>
+#include <QKeyEvent>
 
 // VariableTableModel 
 
@@ -150,32 +151,6 @@ TableRowData VariableTableModel::rowAt(int row) const {
     return (row >= 0 && row < m_rows.size()) ? m_rows.at(row) : TableRowData();
 }
 
-//  VariableFilterProxyModel
-
-VariableFilterProxyModel::VariableFilterProxyModel(QObject* parent)
-    : QSortFilterProxyModel(parent)
-{
-}
-
-void VariableFilterProxyModel::setSearchText(const QString& text) {
-    if (m_searchText == text) return;
-    m_searchText = text;
-    invalidateFilter(); // заставляет прокси заново прогнать filterAcceptsRow по всем строкам
-}
-
-bool VariableFilterProxyModel::filterAcceptsRow(int sourceRow, const QModelIndex& sourceParent) const {
-    if (m_searchText.isEmpty()) return true;
-
-    QAbstractItemModel* src = sourceModel();
-    for (int col = 0; col < src->columnCount(); ++col) {
-        const QModelIndex idx = src->index(sourceRow, col, sourceParent);
-        if (idx.data().toString().contains(m_searchText, Qt::CaseInsensitive)) {
-            return true;
-        }
-    }
-    return false;
-}
-
 //  ValidatingDelegate 
 
 ValidatingDelegate::ValidatingDelegate(IGlobalVariant* manager, QObject* parent)
@@ -185,24 +160,16 @@ ValidatingDelegate::ValidatingDelegate(IGlobalVariant* manager, QObject* parent)
 
 QWidget* ValidatingDelegate::createEditor(QWidget* parent, const QStyleOptionViewItem& option, const QModelIndex& index) const {
     Q_UNUSED(option);
+    if (index.column() != VariableTableModel::ColKey)
+        return QStyledItemDelegate::createEditor(parent, option, index);
+
     auto* editor = new QLineEdit(parent);
-
-    // Комментарий и значение не проверяем  живая подсветка нужна только ключу 
-    if (index.column() == VariableTableModel::ColComment || index.column() == VariableTableModel::ColValue) {
-        return editor;
-    }
-
-    const int col = index.column();
-    const int row = index.row();
-
+    editor->setProperty("model_index", index);
     // Валидация на лету, пока пользователь печатает подсветка красным
     // и всплывающая подсказка с текстом ошибки
-    connect(editor, &QLineEdit::textChanged, editor, [this, editor, col, row](const QString& text) {
-        ValidationResult result;
+    connect(editor, &QLineEdit::textChanged, editor, [this, editor, index](const QString& text) {
         const QString trimmed = text.trimmed();
-        if (col == VariableTableModel::ColKey) {
-            result = m_manager->validateKey(trimmed, row);
-        }
+        const ValidationResult result = m_manager->validateKey(trimmed, index.row());
 
         if (!result.isValid) {
             editor->setStyleSheet("border: 2px solid red; background-color: #FFF0F0;");
@@ -217,9 +184,46 @@ QWidget* ValidatingDelegate::createEditor(QWidget* parent, const QStyleOptionVie
     return editor;
 }
 
+bool ValidatingDelegate::eventFilter(QObject* editor, QEvent* event) {
+    // Проверяем, что произошло нажатие клавиши
+    if (event->type() == QEvent::KeyPress) {
+        QKeyEvent* keyEvent = static_cast<QKeyEvent*>(event);
+        // Если нажали Enter или Return
+        if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter) {
+            QVariant prop = editor->property("model_index");
+            if (prop.isValid()) {
+                QModelIndex index = prop.value<QModelIndex>();
+                // Нас интересует только колонка ключа где есть валидация
+                if (index.isValid() && index.column() == VariableTableModel::ColKey) {
+                    auto* lineEdit = qobject_cast<QLineEdit*>(editor);
+                    if (lineEdit) {
+                        QString text = lineEdit->text().trimmed();
+                        ValidationResult result = m_manager->validateKey(text, index.row());
+                        // если ввод с ошибкой
+                        if (!result.isValid) {
+                            //обновляем всплывающую подсказку с ошибкой
+                            QToolTip::showText(lineEdit->mapToGlobal(QPoint(0, lineEdit->height())), result.errorMessage, lineEdit);
+                            return true; 
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    //для остальных клавиш вызываем стандартное поведение Qt
+    return QStyledItemDelegate::eventFilter(editor, event);
+}
+
 //  проверяется валидность значения до того, как оно
 // попадёт в модель. Если проверка не пройдена  в модель ничего не пишем.
 void ValidatingDelegate::setModelData(QWidget* editor, QAbstractItemModel* model, const QModelIndex& index) const {
+    if (index.column() != VariableTableModel::ColKey)
+    {
+        QStyledItemDelegate::setModelData(editor, model, index);
+        return;
+    }
+
     auto* lineEdit = qobject_cast<QLineEdit*>(editor);
     if (!lineEdit) {
         QStyledItemDelegate::setModelData(editor, model, index);
@@ -228,27 +232,10 @@ void ValidatingDelegate::setModelData(QWidget* editor, QAbstractItemModel* model
 
     const QString text = lineEdit->text().trimmed();
     const int col = index.column();
-
-    // Комментарий и значение валидировать не нужно
-    if (col == VariableTableModel::ColComment) {
-        model->setData(index, text, Qt::EditRole);
-        return;
-    }
-
-    if (col == VariableTableModel::ColValue) {
-        model->setData(index, text, Qt::EditRole);
-        return;
-    }
-
     ValidationResult result;
-    if (col == VariableTableModel::ColKey) {
-        result = m_manager->validateKey(text, index.row());
-    }
+    result = m_manager->validateKey(text, index.row());
 
     if (!result.isValid) {
-        // Ошибка уже показана пользователю живой подсветкой в createEditor 
-        // здесь не коммитим невалидное значение, ячейка останется прежней
-        QToolTip::showText(editor->mapToGlobal(QPoint(0, editor->height())), result.errorMessage, editor);
         return;
     }
 
@@ -257,10 +244,11 @@ void ValidatingDelegate::setModelData(QWidget* editor, QAbstractItemModel* model
 
 void ValidatingDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const {
     const QString text = index.data().toString();
-    if (!searchText.isEmpty() && text.contains(searchText, Qt::CaseInsensitive)) {
+    if (!m_searchText.isEmpty() && text.contains(m_searchText, Qt::CaseInsensitive)) {
         QTextDocument doc;
         QString highlighted = text;
-        highlighted.replace(searchText, "<span style='background-color:yellow; color:black;'>" + searchText + "</span>", Qt::CaseInsensitive);
+        const QString spanStyle = QString("background-color:%1; color:%2;").arg(searchHighlightColor.name(), searchHighlightTextColor.name());
+        highlighted.replace(m_searchText, "<span style='" + spanStyle + "'>" + m_searchText + "</span>", Qt::CaseInsensitive);
         doc.setHtml(highlighted);
 
         painter->save();
