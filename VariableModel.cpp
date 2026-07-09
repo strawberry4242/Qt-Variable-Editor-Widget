@@ -152,65 +152,146 @@ TableRowData VariableTableModel::rowAt(int row) const {
 }
 
 //  ValidatingDelegate 
-
 ValidatingDelegate::ValidatingDelegate(IGlobalVariant* manager, QObject* parent)
     : QStyledItemDelegate(parent), m_manager(manager)
 {
 }
+
+ValidationResult ValidatingDelegate::validateKeyNotEmpty(const QString& key) {
+    ValidationResult result;
+    if (key.isEmpty()) {
+        result.isValid = false;
+        result.errorMessage = "Название (Ключ) не может быть пустым!";
+        result.errorSource = ValidationResult::ErrorSource::Key;
+    }
+    return result;
+}
+
+ValidationResult ValidatingDelegate::validateKeyFormat(const QString& key) {
+    static const QRegularExpression keyRegex("^[a-zA-Z0-9_]+$");
+    ValidationResult result;
+    if (!keyRegex.match(key).hasMatch()) {
+        result.isValid = false;
+        result.errorMessage = "Ошибка в Ключе! Допустимы только латинские буквы, цифры и знак подчеркивания '_'.";
+        result.errorSource = ValidationResult::ErrorSource::Key;
+    }
+    return result;
+}
+
+bool ValidatingDelegate::keyExists(IGlobalVariant* manager, const QString& key, const QString& oldKey) {
+    if (key == oldKey) return false; // ключ не поменялся — сам с собой не дубликат
+    const QList<TableRowData> values = manager->getValues();
+    for (const auto& row : values) {
+        if (row.key == key) return true;
+    }
+    return false;
+}
+
+class MyLineEdit : public QLineEdit
+{
+public:
+    explicit MyLineEdit(IGlobalVariant* manager, QWidget* parent)
+        : QLineEdit(parent), m_manager(manager)
+    {
+        connect(this, &QLineEdit::textChanged, this, [this](const QString& text) {
+            const QString trimmed = text.trimmed();
+
+            ValidationResult result = ValidatingDelegate::validateKeyNotEmpty(trimmed);
+            if (result.isValid) {
+                result = ValidatingDelegate::validasteKeyFormat(trimmed);
+            }
+
+            if (!result.isValid) {
+                setStyleSheet("border: 2px solid red; background-color: #FFF0F0;");
+                QToolTip::showText(mapToGlobal(QPoint(0, height())), result.errorMessage, this);
+            }
+            else {
+                setStyleSheet("");
+                QToolTip::hideText();
+            }
+            });
+    }
+
+    void setDefaultValue(const QString& text)
+    {
+        setText(text);
+        m_defaultValue = text;
+    }
+
+    QString defaultValue() const { return m_defaultValue; }
+
+    bool isDefaultValue() const
+    {
+        return text().trimmed() == m_defaultValue;
+    }
+
+private:
+    IGlobalVariant* m_manager;
+    QString m_defaultValue;
+};
 
 QWidget* ValidatingDelegate::createEditor(QWidget* parent, const QStyleOptionViewItem& option, const QModelIndex& index) const {
     Q_UNUSED(option);
     if (index.column() != VariableTableModel::ColKey)
         return QStyledItemDelegate::createEditor(parent, option, index);
 
-    auto* editor = new QLineEdit(parent);
-    editor->setProperty("model_index", index);
-    // Валидация на лету, пока пользователь печатает подсветка красным
-    // и всплывающая подсказка с текстом ошибки
-    connect(editor, &QLineEdit::textChanged, editor, [this, editor, index](const QString& text) {
-        const QString trimmed = text.trimmed();
-        const ValidationResult result = m_manager->validateKey(trimmed, index.row());
+    return new MyLineEdit(m_manager, parent);
+}
 
-        if (!result.isValid) {
-            editor->setStyleSheet("border: 2px solid red; background-color: #FFF0F0;");
-            QToolTip::showText(editor->mapToGlobal(QPoint(0, editor->height())), result.errorMessage, editor);
-        }
-        else {
-            editor->setStyleSheet("");
-            QToolTip::hideText();
-        }
-        });
+void ValidatingDelegate::setEditorData(QWidget* editor, const QModelIndex& index) const
+{
+    if (index.column() != VariableTableModel::ColKey) {
+        QStyledItemDelegate::setEditorData(editor, index);
+        return;
+    }
 
-    return editor;
+    auto* lineEdit = dynamic_cast<MyLineEdit*>(editor);
+    if (!lineEdit) {
+        QStyledItemDelegate::setEditorData(editor, index);
+        return;
+    }
+
+    lineEdit->setDefaultValue(index.data().toString());
 }
 
 bool ValidatingDelegate::eventFilter(QObject* editor, QEvent* event) {
-    // Проверяем, что произошло нажатие клавиши
+    auto* lineEdit = dynamic_cast<MyLineEdit*>(editor);
+    if (!lineEdit)
+        return QStyledItemDelegate::eventFilter(editor, event);
+
     if (event->type() == QEvent::KeyPress) {
         QKeyEvent* keyEvent = static_cast<QKeyEvent*>(event);
-        // Если нажали Enter или Return
         if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter) {
-            QVariant prop = editor->property("model_index");
-            if (prop.isValid()) {
-                QModelIndex index = prop.value<QModelIndex>();
-                // Нас интересует только колонка ключа где есть валидация
-                if (index.isValid() && index.column() == VariableTableModel::ColKey) {
-                    auto* lineEdit = qobject_cast<QLineEdit*>(editor);
-                    if (lineEdit) {
-                        QString text = lineEdit->text().trimmed();
-                        ValidationResult result = m_manager->validateKey(text, index.row());
-                        // если ввод с ошибкой
-                        if (!result.isValid) {
-                            //обновляем всплывающую подсказку с ошибкой
-                            QToolTip::showText(lineEdit->mapToGlobal(QPoint(0, lineEdit->height())), result.errorMessage, lineEdit);
-                            return true; 
-                        }
-                    }
-                }
+            const QString text = lineEdit->text().trimmed();
+
+            ValidationResult result = validateKeyNotEmpty(text);
+            if (result.isValid) result = validateKeyFormat(text);
+
+            if (!result.isValid) {
+                QToolTip::showText(lineEdit->mapToGlobal(QPoint(0, lineEdit->height())),
+                    result.errorMessage, lineEdit);
+                return true;
+            }
+
+            if (keyExists(m_manager, text, lineEdit->defaultValue())) {
+                QToolTip::showText(lineEdit->mapToGlobal(QPoint(0, lineEdit->height())),
+                    "Переменная с именем '" + text + "' уже существует!", lineEdit);
+                return true;
             }
         }
     }
-    //для остальных клавиш вызываем стандартное поведение Qt
+    else if (event->type() == QEvent::FocusOut) {
+        const QString text = lineEdit->text().trimmed();
+        const bool notEmptyOk = validateKeyNotEmpty(text).isValid;
+        const bool formatOk = notEmptyOk && validateKeyFormat(text).isValid;
+        const bool duplicate = keyExists(m_manager, text, lineEdit->defaultValue());
+
+        if (!formatOk || duplicate) {
+            lineEdit->setText(lineEdit->defaultValue());
+            lineEdit->setStyleSheet("");
+            QToolTip::hideText();
+        }
+    }
     return QStyledItemDelegate::eventFilter(editor, event);
 }
 

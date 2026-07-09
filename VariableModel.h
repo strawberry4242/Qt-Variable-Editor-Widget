@@ -48,12 +48,15 @@ class ValidatingDelegate : public QStyledItemDelegate
 public:
     explicit ValidatingDelegate(IGlobalVariant* manager, QObject* parent = nullptr);
     QWidget* createEditor(QWidget* parent, const QStyleOptionViewItem& option, const QModelIndex& index) const override;
+    void setEditorData(QWidget* editor, const QModelIndex& index) const override;
     void setModelData(QWidget* editor, QAbstractItemModel* model, const QModelIndex& index) const override;
     void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override;
     bool eventFilter(QObject* editor, QEvent* event) override;
-    // Публичный сеттер вместо прямого доступа к полю снаружи
     void setSearchText(const QString& text) { m_searchText = text; }
     QString searchText() const { return m_searchText; }
+    static ValidationResult validateKeyNotEmpty(const QString& key);
+    static ValidationResult validateKeyFormat(const QString& key);
+    static bool keyExists(IGlobalVariant* manager, const QString& key, const QString& oldKey = QString());
 private:
     IGlobalVariant* m_manager;
     QString m_searchText;

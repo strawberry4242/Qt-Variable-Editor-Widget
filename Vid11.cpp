@@ -21,6 +21,8 @@
 #include <QDialogButtonBox>
 #include <QSortFilterProxyModel>
 #include <QCloseEvent>
+#include <QSettings>
+#include <QCloseEvent>
 
 
 Vid11::Vid11(QWidget* parent)
@@ -77,14 +79,16 @@ Vid11::~Vid11() {
 
 void Vid11::setupUI() {
     this->setWindowTitle("Редактор пользовательских переменных");
-    // Запрашиваем геометрию у бэкенда по уникальному ключу "Vid11"
-    QByteArray geometry = m_variantManager->loadWidgetGeometry(QStringLiteral("Vid11"));
+
+    // Пытаемся восстановить прошлую геометрию
+    QSettings settings;
+    QByteArray geometry = settings.value("Vid11/geometry").toByteArray();
 
     if (!geometry.isEmpty()) {
         this->restoreGeometry(geometry);
     }
     else {
-        // Дефолтный размер, если настроек еще нет
+        // Если запускаем первый раз и настроек еще нет — ставим дефолтный размер
         this->resize(750, 500);
     }
     QVBoxLayout* mainLayout = new QVBoxLayout(this);
@@ -201,15 +205,18 @@ void Vid11::AddClicked() {
 
     // Валидация в реальном времени и блокировка OK, пока есть ошибка 
     auto validateLive = [=]() {
-        ValidationResult keyResult = m_variantManager->validateKey(keyEdit->text().trimmed());
-        keyEdit->setStyleSheet(keyResult.isValid ? "" : "border: 1px solid red; background-color: #FFF0F0;");
-        if (!keyResult.isValid) {
-            errorLabel->setText(keyResult.errorMessage);
-        }
-        else {
-            errorLabel->clear();
+        const QString key = keyEdit->text().trimmed();
+
+        ValidationResult keyResult = ValidatingDelegate::validateKeyNotEmpty(key);
+        if (keyResult.isValid) keyResult = ValidatingDelegate::validateKeyFormat(key);
+        if (keyResult.isValid && ValidatingDelegate::keyExists(m_variantManager, key)) {
+            keyResult.isValid = false;
+            keyResult.errorMessage = "Переменная с именем '" + key + "' уже существует!";
+            keyResult.errorSource = ValidationResult::ErrorSource::Key;
         }
 
+        keyEdit->setStyleSheet(keyResult.isValid ? "" : "border: 1px solid red; background-color: #FFF0F0;");
+        errorLabel->setText(keyResult.isValid ? QString() : keyResult.errorMessage);
         okButton->setEnabled(keyResult.isValid);
         };
 
@@ -259,8 +266,10 @@ void Vid11::RedoClicked() {
     m_undoStack->redo();
 }
 void Vid11::closeEvent(QCloseEvent* event) {
-    // Получаем геометрию от Qt и сразу отдаем её в бэкенд на сохранение
-    m_variantManager->saveWidgetGeometry(QStringLiteral("Vid11"), saveGeometry());
-    // вызываем базовый класс чтобы окно закрылось
+    QSettings settings;
+    // Сохраняем всю геометрию под уникальным ключом
+    settings.setValue("Vid11/geometry", saveGeometry());
+
+    // Передаем событие дальше базовому классу, чтобы окно действительно закрылось
     QWidget::closeEvent(event);
 }

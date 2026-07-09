@@ -2,7 +2,6 @@
 #include <QString>
 #include <QStringList>
 #include <QList>
-#include <QRegularExpression>
 #include <map>
 #include <QSettings>
 #include <QByteArray>
@@ -13,15 +12,17 @@ struct TableRowData {
     QString comment;
 };
 
-// Структура для возврата результата проверки
+// Структура для возврата результата проверки (сама структура остаётся тут,
+// это просто общий тип данных, а не логика валидации)
 struct ValidationResult {
     bool isValid = true;
     QString errorMessage;
-    enum class ErrorSource { None, Key };  
+    enum class ErrorSource { None, Key };
     ErrorSource errorSource = ErrorSource::None;
 };
 
-// Интерфейс для работы с данными
+// Интерфейс для работы с данными.
+// Больше никакой валидации — только хранение и доступ к данным
 class IGlobalVariant
 {
 public:
@@ -30,57 +31,14 @@ public:
     virtual void setValue(const QString& key, const QString& value, const QString& comment = QString()) = 0;
     virtual QString value(const QString& key, const QString& defaultValue = QString()) const = 0;
 
-    // Работа с комментарием отдельно от значения 
     virtual void setComment(const QString& key, const QString& comment) = 0;
     virtual QString comment(const QString& key) const = 0;
 
     virtual QList<TableRowData> getValues() const = 0;
     virtual void setValues(const QList<TableRowData>& data) = 0;
-
-    //Дефолтная реализация сохранения настроек окна
-    virtual void saveWidgetGeometry(const QString& key, const QByteArray& geometry) {
-        QSettings settings;
-        settings.setValue(QStringLiteral("Geometry/") + key, geometry);
-    }
-
-    virtual QByteArray loadWidgetGeometry(const QString& key) const {
-        QSettings settings;
-        return settings.value(QStringLiteral("Geometry/") + key).toByteArray();
-    }
-
-    // Дефолтная реализация проверки ключа 
-    virtual ValidationResult validateKey(const QString& key, int index = -1) {
-        static const QRegularExpression keyRegex("^[a-zA-Z0-9_]+$");
-        ValidationResult result;
-
-        if (key.isEmpty()) {
-            result.isValid = false;
-            result.errorMessage = "Название (Ключ) не может быть пустым!";
-            result.errorSource = ValidationResult::ErrorSource::Key;
-            return result;
-        }
-        if (!keyRegex.match(key).hasMatch()) {
-            result.isValid = false;
-            result.errorMessage = "Ошибка в Ключе! Допустимы только латинские буквы, цифры и знак подчеркивания '_'.";
-            result.errorSource = ValidationResult::ErrorSource::Key;
-            return result;
-        }
-
-        const QList<TableRowData> currentValues = getValues();
-        for (int i = 0; i < currentValues.size(); ++i) {
-            if (i == index) continue;
-            if (currentValues[i].key == key) {
-                result.isValid = false;
-                result.errorMessage = "Переменная с именем '" + key + "' уже существует!";
-                result.errorSource = ValidationResult::ErrorSource::Key;
-                return result;
-            }
-        }
-        return result;
-    }
 };
 
-// Реализация интерфейса
+// Реализация интерфейса — без изменений
 class GlobalVariant : public IGlobalVariant
 {
 public:
@@ -95,12 +53,11 @@ public:
     QList<TableRowData> getValues() const override;
     void setValues(const QList<TableRowData>& data) override;
 
-    static QString getValue(const QString& key, const QString& defaultValue = QString()); // значение по ключу
-    static QStringList getKeys(); // список доступных ключей
+    static QString getValue(const QString& key, const QString& defaultValue = QString());
+    static QStringList getKeys();
 private:
     void saveToSettings() const;
     void loadFromSettings();
 
-    // Хранилище переменных: ключ -> данные строки 
     std::map<QString, TableRowData> m_data;
 };
