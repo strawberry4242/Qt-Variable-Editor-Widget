@@ -198,7 +198,7 @@ public:
 
             ValidationResult result = ValidatingDelegate::validateKeyNotEmpty(trimmed);
             if (result.isValid) {
-                result = ValidatingDelegate::validasteKeyFormat(trimmed);
+                result = ValidatingDelegate::validateKeyFormat(trimmed);
             }
 
             if (!result.isValid) {
@@ -261,7 +261,8 @@ bool ValidatingDelegate::eventFilter(QObject* editor, QEvent* event) {
 
     if (event->type() == QEvent::KeyPress) {
         QKeyEvent* keyEvent = static_cast<QKeyEvent*>(event);
-        if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter) {
+        if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter || keyEvent->key() == Qt::Key_Tab ||
+            keyEvent->key() == Qt::Key_Backtab) {
             const QString text = lineEdit->text().trimmed();
 
             ValidationResult result = validateKeyNotEmpty(text);
