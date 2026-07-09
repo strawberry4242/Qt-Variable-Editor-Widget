@@ -162,7 +162,6 @@ ValidationResult ValidatingDelegate::validateKeyNotEmpty(const QString& key) {
     if (key.isEmpty()) {
         result.isValid = false;
         result.errorMessage = "Название (Ключ) не может быть пустым!";
-        result.errorSource = ValidationResult::ErrorSource::Key;
     }
     return result;
 }
@@ -173,13 +172,11 @@ ValidationResult ValidatingDelegate::validateKeyFormat(const QString& key) {
     if (!keyRegex.match(key).hasMatch()) {
         result.isValid = false;
         result.errorMessage = "Ошибка в Ключе! Допустимы только латинские буквы, цифры и знак подчеркивания '_'.";
-        result.errorSource = ValidationResult::ErrorSource::Key;
     }
     return result;
 }
 
-bool ValidatingDelegate::keyExists(IGlobalVariant* manager, const QString& key, const QString& oldKey) {
-    if (key == oldKey) return false; // ключ не поменялся — сам с собой не дубликат
+bool ValidatingDelegate::keyExists(IGlobalVariant* manager, const QString& key) {
     const QList<TableRowData> values = manager->getValues();
     for (const auto& row : values) {
         if (row.key == key) return true;
@@ -193,13 +190,8 @@ public:
     explicit MyLineEdit(IGlobalVariant* manager, QWidget* parent)
         : QLineEdit(parent), m_manager(manager)
     {
-        connect(this, &QLineEdit::textChanged, this, [this](const QString& text) {
-            const QString trimmed = text.trimmed();
-
-            ValidationResult result = ValidatingDelegate::validateKeyNotEmpty(trimmed);
-            if (result.isValid) {
-                result = ValidatingDelegate::validateKeyFormat(trimmed);
-            }
+        connect(this, &QLineEdit::textEdited, this, [this](const QString& text) {
+            ValidationResult result = isValid();
 
             if (!result.isValid) {
                 setStyleSheet("border: 2px solid red; background-color: #FFF0F0;");
@@ -209,8 +201,25 @@ public:
                 setStyleSheet("");
                 QToolTip::hideText();
             }
-            });
+        });
     }
+
+    ValidationResult isValid() const
+    {
+        ValidationResult res = ValidatingDelegate::validateKeyNotEmpty(text().trimmed());
+        if (res.isValid)
+            res = ValidatingDelegate::validateKeyFormat(text().trimmed());
+
+        if (!res.isValid)
+            return res;
+
+        if (!isDefaultValue() && ValidatingDelegate::keyExists(m_manager, text().trimmed()))
+        {
+            res.isValid = false;
+            res.errorMessage = "Переменная с именем '" + text().trimmed() + "' уже существует!";
+        }
+        return res;
+    };
 
     void setDefaultValue(const QString& text)
     {
@@ -263,36 +272,21 @@ bool ValidatingDelegate::eventFilter(QObject* editor, QEvent* event) {
         QKeyEvent* keyEvent = static_cast<QKeyEvent*>(event);
         if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter || keyEvent->key() == Qt::Key_Tab ||
             keyEvent->key() == Qt::Key_Backtab) {
-            const QString text = lineEdit->text().trimmed();
-
-            ValidationResult result = validateKeyNotEmpty(text);
-            if (result.isValid) result = validateKeyFormat(text);
-
+            ValidationResult result = lineEdit->isValid();
             if (!result.isValid) {
                 QToolTip::showText(lineEdit->mapToGlobal(QPoint(0, lineEdit->height())),
-                    result.errorMessage, lineEdit);
-                return true;
+                    result.errorMessage,
+                    lineEdit);
             }
-
-            if (keyExists(m_manager, text, lineEdit->defaultValue())) {
-                QToolTip::showText(lineEdit->mapToGlobal(QPoint(0, lineEdit->height())),
-                    "Переменная с именем '" + text + "' уже существует!", lineEdit);
-                return true;
-            }
+            return true;
         }
     }
     else if (event->type() == QEvent::FocusOut) {
-        const QString text = lineEdit->text().trimmed();
-        const bool notEmptyOk = validateKeyNotEmpty(text).isValid;
-        const bool formatOk = notEmptyOk && validateKeyFormat(text).isValid;
-        const bool duplicate = keyExists(m_manager, text, lineEdit->defaultValue());
-
-        if (!formatOk || duplicate) {
-            lineEdit->setText(lineEdit->defaultValue());
-            lineEdit->setStyleSheet("");
-            QToolTip::hideText();
-        }
+        lineEdit->setText(lineEdit->defaultValue());
+        lineEdit->setStyleSheet("");
+        QToolTip::hideText();
     }
+
     return QStyledItemDelegate::eventFilter(editor, event);
 }
 

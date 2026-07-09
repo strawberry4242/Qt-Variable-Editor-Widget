@@ -212,7 +212,6 @@ void Vid11::AddClicked() {
         if (keyResult.isValid && ValidatingDelegate::keyExists(m_variantManager, key)) {
             keyResult.isValid = false;
             keyResult.errorMessage = "Переменная с именем '" + key + "' уже существует!";
-            keyResult.errorSource = ValidationResult::ErrorSource::Key;
         }
 
         keyEdit->setStyleSheet(keyResult.isValid ? "" : "border: 1px solid red; background-color: #FFF0F0;");

@@ -56,7 +56,7 @@ public:
     QString searchText() const { return m_searchText; }
     static ValidationResult validateKeyNotEmpty(const QString& key);
     static ValidationResult validateKeyFormat(const QString& key);
-    static bool keyExists(IGlobalVariant* manager, const QString& key, const QString& oldKey = QString());
+    static bool keyExists(IGlobalVariant* manager, const QString& key);
 private:
     IGlobalVariant* m_manager;
     QString m_searchText;

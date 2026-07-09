@@ -17,8 +17,6 @@ struct TableRowData {
 struct ValidationResult {
     bool isValid = true;
     QString errorMessage;
-    enum class ErrorSource { None, Key };
-    ErrorSource errorSource = ErrorSource::None;
 };
 
 // Интерфейс для работы с данными.
